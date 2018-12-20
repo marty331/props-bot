@@ -1,0 +1,26 @@
+version: '3'
+services:
+  db:
+    build: ./db
+    restart: always
+    ports:
+    - 5432:5432
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+    - database_data:/var/lib/postgresql/data
+  bot:
+    build: ./bot
+    expose:
+    - 8080
+    ports:
+    - 8080:8080
+    links:
+    - db
+    environment:
+    - POSTGRES_DB=postgres
+    - POSTGRES_USER=postgres
+    - POSTGRES_PASSWORD=postgres
+volumes:
+  database_data:
+    driver: local

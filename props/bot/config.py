@@ -30,6 +30,12 @@ logging.basicConfig(
 logging.Formatter.converter = time.gmtime
 log = logging.getLogger(__name__)
 
+
+class ProjNameSplitError(Exception):
+    def __init__(self, basename):
+        msg = f'projname split error on "-" with basename={basename}'
+        super(ProjNameSplitError, self).__init__(msg)
+
 def git(*args, strip=True, **kwargs):
     try:
         result = str(sh.contrib.git(*args, **kwargs))
@@ -73,30 +79,63 @@ class AutoConfigPlus(decouple.AutoConfig):
 
     @property
     def APP_REPOROOT(self):
-        return git('rev-parse', '--show-toplevel')
+        try:
+            return config('APP_REPOROOT')
+        except UndefinedValueError as uve:
+            try:
+                return git('rev-parse', '--show-toplevel')
+            except:
+                raise uve
 
     @property
     def APP_TAGNAME(self):
-        return git('describe', '--abbrev=0', '--always')
+        try:
+            return config('APP_TAGNAME')
+        except UndefinedValueError as uve:
+            try:
+                return git('describe', '--abbrev=0', '--always')
+            except:
+                raise uve
 
     @property
     def APP_VERSION(self):
         try:
             return config('APP_VERSION')
-        except UndefinedValueError:
-            return git('describe', '--abbrev=7', '--always')
+        except UndefinedValueError as uve:
+            try:
+                return git('describe', '--abbrev=7', '--always')
+            except:
+                raise uve
 
     @property
     def APP_BRANCH(self):
-        return git('rev-parse', '--abbrev-ref', 'HEAD')
+        try:
+            return config('APP_BRANCH')
+        except UndefinedValueError as uve:
+            try:
+                return git('rev-parse', '--abbrev-ref', 'HEAD')
+            except:
+                raise uve
 
     @property
     def APP_REVISION(self):
-        return git('rev-parse', 'HEAD')
+        try:
+            return config('APP_REVISION')
+        except UndefinedValueError as uve:
+            try:
+                return git('rev-parse', 'HEAD')
+            except:
+                raise uve
 
     @property
     def APP_REMOTE_ORIGIN_URL(self):
-        return git('config', '--get', 'remote.origin.url')
+        try:
+            return config('APP_REMOTE_ORIGIN_URL')
+        except UndefinedValueError as uve:
+            try:
+                return git('config', '--get', 'remote.origin.url')
+            except:
+                raise uve
 
     @property
     def APP_REPONAME(self):
@@ -106,11 +145,24 @@ class AutoConfigPlus(decouple.AutoConfig):
 
     @property
     def APP_PROJNAME(self):
-        return os.path.basename(self.APP_REPONAME)
+        basename = os.path.basename(self.APP_REPONAME)
+        parts = os.path.basename(basename).split('-')
+        if len(parts) == 2:
+            return parts[0]
+        else:
+            raise ProjNameSplitError(basename)
 
     @property
     def APP_PROJPATH(self):
         return os.path.join(self.APP_REPOROOT, self.APP_PROJNAME)
+
+    @property
+    def APP_BOTPATH(self):
+        return os.path.join(self.APP_PROJPATH, 'bot')
+
+    @property
+    def APP_DBPATH(self):
+        return os.path.join(self.APP_PROJPATH, 'db')
 
     @property
     def APP_TESTPATH(self):

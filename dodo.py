@@ -9,7 +9,7 @@ import sys
 from doit import get_var
 from ruamel import yaml
 
-from props.config import CFG
+from props.bot.config import CFG
 from props.utils.shell import call
 from props.utils.timestamp import utcnow, datetime2int
 
@@ -200,12 +200,31 @@ def task_tls():
 
 def task_build():
     '''
-    build flask|quart app
+    build flask|quart app via docker-compose
     '''
+
+    yield {
+        'name': 'docker-compose-build',
+        'task_dep': [],
+        'actions': [
+            f'cd {CFG.APP_PROJPATH} && docker-compose build',
+        ],
+    }
+
+    docker_compose_yml = yaml.safe_load(open(f'{CFG.APP_PROJPATH}/docker-compose.yml'))
+    for svc in docker_compose_yml['services'].keys():
+        yield {
+            'name': svc,
+            'task_dep': [],
+            'actions': [
+                f'docker tag {CFG.APP_PROJNAME}_{svc} connected-workplace/{CFG.APP_PROJNAME}-{svc}:{CFG.APP_VERSION}',
+                f'docker rmi {CFG.APP_PROJNAME}_{svc}',
+            ],
+        }
 
 def task_deploy():
     '''
-    deloy flask app via docker-compose
+    deloy flask|quart app via docker-compose
     '''
     return {
         'task_dep': [
@@ -213,12 +232,12 @@ def task_deploy():
             'checkreqs',
             'version',
             'test',
+            'build',
             #'config',
             #'environment',
             #'savelogs',
         ],
         'actions': [
-            f'cd {CFG.APP_PROJPATH} && docker-compose build',
             f'cd {CFG.APP_PROJPATH} && docker-compose up --remove-orphans -d',
         ],
     }
