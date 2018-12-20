@@ -8,22 +8,18 @@ import os
 import re
 import sys
 
-from flask import abort, Flask, jsonify, request, Response
+from quart import abort, Quart, jsonify, request, Response
 from attrdict import AttrDict
-
 from slackclient import SlackClient
 
-from utils.fmt import *
+from utils.fmt import dbg
+from config import CFG
 
-app = Flask(__name__)
+app = Quart(__name__)
 
-SLACK_BOT_TOKEN = os.environ['SLACK_BOT_TOKEN']
-SLACK_VERIFICATION_TOKEN = os.environ['SLACK_VERIFICATION_TOKEN']
-SLACK_TEAM_ID = os.environ['SLACK_TEAM_ID']
+slack = SlackClient(CFG.SLACK_BOT_USER_OAUTH_ACCESS_TOKEN)
 
-slack = SlackClient(SLACK_BOT_TOKEN)
-
-PROPS_BOT_CHANNEL_ID = 'CDKMVQLB0'
+CONTRIBUTE_JSON = open('contribute.json').read()
 
 PROPS = {}
 
@@ -44,31 +40,31 @@ def parse(text):
     return [None] * 4
 
 def is_request_valid(token, team_id):
-    return token == SLACK_VERIFICATION_TOKEN and team_id == SLACK_TEAM_ID
+    return token == SLACK_VERIFICATION_TOKEN and team_id == CFG.SLACK_TEAM_ID
 
 class EventTextError(Exception):
     def __init__(self, json):
-        msg = fmt('event.text error; json = {json}')
+        msg = f'event.text error; json = {json}'
         super(EventTextError, self).__init__(msg)
 
 class EventChannelError(Exception):
     def __init__(self, json):
-        msg = fmt('event.channel error; json = {json}')
+        msg = f'event.channel error; json = {json}'
         super(EventChannelError, self).__init__(msg)
 
 class ChannelsListError(Exception):
     def __init__(self, json):
-        msg = fmt('channels.list error; json = {json}')
+        msg = f'channels.list error; json = {json}'
         super(ChannelsListError, self).__init__(msg)
 
 class ChannelsInfoError(Exception):
     def __init__(self, json):
-        msg = fmt('channels.info error; json = {json}')
+        msg = f'channels.info error; json = {json}'
         super(ChannelsInfoError, self).__init__(msg)
 
 class MembersListError(Exception):
     def __init__(self, json):
-        msg = fmt('users.list error; json = {json}')
+        msg = f'users.list error; json = {json}'
         super(MembersListError, self).__init__(msg)
 
 class PropsBot(object):
@@ -78,8 +74,8 @@ class PropsBot(object):
     operators = {
         '++': lambda x, y: x + 1,
         '--': lambda x, y: x - 1,
-        '+=': lambda x, y: x + y,
-        '-=': lambda x, y: x - y,
+        '+=': lambda x, y: x + int(y),
+        '-=': lambda x, y: x - int(y),
     }
 
     def __init__(self, event):
@@ -134,47 +130,68 @@ class PropsBot(object):
         slack.api_call('chat.postMessage', channel=channel if channel else self.channel, text=message)
 
     def update(self, name, prop, operator, operand):
+        dbg()
         if operator:
             member_props = PropsBot.props.pop(name, {})
             prop_value = member_props.pop(prop, 0)
             member_props[prop] = PropsBot.operators[operator](prop_value, operand)
             PropsBot.props[name] = member_props
-        message = fmt('{name}:{prop} => {0}', PropsBot.props.get(name, {}).get(prop, 0))
+        value = PropsBot.props.get(name, {}).get(prop, 0)
+        message = f'{name}:{prop} => {value}'
         self.send(message)
 
+@app.route('/version')
+async def version():
+    headers = request.headers
+    json = await request.get_json(silent=True)
+    json = AttrDict(json)
+    r1 = slack.api_call('api.test')
+    r2 = slack.api_call('auth.test')
+    dbg()
+    return f'{CFG.APP_VERSION}\n', 200
+
+@app.route('/contribute.json')
+async def contribute_json():
+    return CONTRIBUTE_JSON, 200
+
 @app.route('/props-bot', methods=['POST'])
-def props_bot():
-    form = AttrDict(request.form.to_dict())
+async def props_bot():
+    form = await request.form.to_dict()
+    form = AttrDict(form)
     if not is_request_valid(form.token, form.team_id):
         abort(400)
 
     return 'wazzup playa?', 200
 
 @app.route('/slack/interactivity', methods=['POST'])
-def slack_interactivity():
-    json = AttrDict(request.get_json(silent=True))
-    return Response(), 200
+async def slack_interactivity():
+    json = await request.get_json(silent=True)
+    json = AttrDict(json)
+    return Response('', status=200)
 
 @app.route('/slack/message-menus', methods=['POST'])
-def slack_message_menus():
-    json = AttrDict(request.get_json(silent=True))
-    return Response(), 200
+async def slack_message_menus():
+    json = await request.get_json(silent=True)
+    json = AttrDict(json)
+    return Response('', status=200)
 
 @app.route('/slack/events', methods=['POST'])
-def slack_events():
+async def slack_events():
     print('*'*80)
-    json = AttrDict(request.get_json(silent=True))
+    json = await request.get_json(silent=True)
+    json = AttrDict(json)
     if 'challenge' in json:
         return json.challenge, 200
-    if json.event.channel != PROPS_BOT_CHANNEL_ID and 'text' in json.event:
-        return Response(), 200
+    if json.event.channel != CFG.PROPS_BOT_CHANNEL_ID and 'text' in json.event:
+        return Response('', status=200)
     if json.event.get('username', None) == 'props':
-        return Response(), 200
+        return Response('', status=200)
 
     dbg(event=json.event)
     bot = PropsBot(json.event)
     name, prop, operator, operand = bot.parse()
+    dbg(name, prop, operator, operand)
     if name in bot.members_in_channel:
         channel = bot.channel
         bot.update(name, prop, operator, operand)
-    return Response(), 200
+    return Response('', status=200)

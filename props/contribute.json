@@ -1,0 +1,20 @@
+{
+    "name": "props-bot",
+    "description": "The Mozilla Props Bot",
+    "participate": {
+        "slack": "slack://mozilla.slack.com#slackbot-ideas",
+        "slack-contacts": ["jojo", "escote"]
+    },
+
+    "repository": {
+        "url": "https://github.com/mozilla-it/props-bot",
+        "license": "MPL 2.0"
+    },
+    "bugs": {
+        "list": "https://github.com/mozilla-it/props-bot/issues",
+        "report": "https://github.com/mozilla-it/props-bot/issues",
+    },
+    "urls": {
+        "prod": "https://props-bot.mozilla-slack.app"
+    }
+}

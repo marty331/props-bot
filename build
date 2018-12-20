@@ -1,0 +1,14 @@
+#!/bin/bash
+
+if [ -n "$DEBUG" ]; then
+    PS4=':${LINENO}+'
+    set -x
+fi
+
+IMAGE_NAME=connectedworkplace/props-bot:$(git describe --always --abbrev=7)
+
+docker build props/ -t $IMAGE_NAME
+
+if [[ "$1" == "-p" ]] || [[ "$1" == "--push" ]]; then
+    docker push $IMAGE_NAME
+fi

@@ -1,0 +1,8 @@
+language: python
+python:
+  - "3.6"
+install:
+  - "pip install -r requirements.txt"
+before_script:
+  - "cp autocert/api/config.yml.example autocert/api/config.yml"
+script: "doit test"
