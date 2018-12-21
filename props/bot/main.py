@@ -26,7 +26,7 @@ PROPS = {}
 ### incoming webhooks
 ### https://hooks.slack.com/services/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
 
-parse_regex = re.compile('(?P<target>[A-Za-z0-9_-]+)(:(?P<prop>[A-Za-z0-9_-]+))?(?P<operator>\+\+|--|\+=|-=)?(?P<operand>[0-9])?')
+parse_regex = re.compile('(?P<target>[A-Za-z0-9_-]+)(:(?P<prop>[A-Za-z0-9_-]+))?(?P<operator>++|--|+=|-=)?(?P<operand>[0-9])?')
 
 def augment(operator, operand):
     value = int(operand) if operand else 1
