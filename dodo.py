@@ -26,6 +26,8 @@ DOIT_CONFIG = {
     'verbosity': 2,
 }
 
+DOCKER_COMPOSE_YML = yaml.safe_load(open(f'{CFG.APP_PROJPATH}/docker-compose.yml'))
+
 class UnknownPkgmgrError(Exception):
     def __init__(self):
         super(UnknownPkgmgrError, self).__init__('unknown pkgmgr!')
@@ -94,13 +96,13 @@ def task_checkreqs():
     ]
     return {
         'deb': {
-            'actions': ['dpkg -s ' + deb for deb in DEBS],
+            'actions': [f'dpkg -s {deb} 2>&1 >/dev/null' for deb in DEBS],
         },
         'rpm': {
-            'actions': ['rpm -q ' + rpm for rpm in RPMS],
+            'actions': ['rpm -q ' + rpm for rpm in RPMS], #FIXME: probably silent this?
         },
         'brew': {
-            'actions': ['true'],
+            'actions': ['true'], #FIXME: check that this works?
         }
     }[get_pkgmgr()]
 
@@ -128,7 +130,7 @@ def task_pull():
     dirty_update = f'echo "refusing to \'{update}\' because the tree is dirty"'
 
     yield {
-        'name': 'mozilla-it/autocert',
+        'name': 'mozilla-it/props-bot',
         'actions': [
             f'if {test}; then {pull}; else {dirty_pull}; exit 1; fi',
         ],
@@ -142,24 +144,37 @@ def task_pull():
             ],
         }
 
-def task_test():
+def task_venv():
     '''
-    setup venv and run pytest
+    setup venv
     '''
-    PYTHONPATH = 'PYTHONPATH=.:autocert:autocert/api:$PYTHONPATH'
     return {
-        'task_dep': [
-            'noroot',
-            #'config',
-        ],
+        'task_dep': [],
         'actions': [
             'virtualenv --python=$(which python3) venv',
             'venv/bin/pip3 install --upgrade pip',
-            f'venv/bin/pip3 install -r {CFG.APP_REPOROOT}/requirements.txt',
             f'venv/bin/pip3 install -r {CFG.APP_TESTPATH}/requirements.txt',
-            f'{PYTHONPATH} venv/bin/python3 -m pytest -s -vv tests/api',
         ],
     }
+
+def task_test():
+    '''
+    run pytest
+    '''
+
+    for svc in DOCKER_COMPOSE_YML['services'].keys():
+        PYTHONPATH = f'PYTHONPATH=.:{CFG.APP_PROJPATH}:{CFG.APP_PROJPATH}/{svc}:$PYTHONPATH'
+        yield {
+            'name': svc,
+            'task_dep': [
+                'noroot',
+                'venv'
+            ],
+            'actions': [
+                f'venv/bin/pip3 install -r {CFG.APP_PROJPATH}/{svc}/requirements.txt',
+                f'{PYTHONPATH} venv/bin/python3 -m pytest -s -vv tests/{svc}',
+            ],
+        }
 
 def task_version():
     '''
@@ -183,7 +198,7 @@ def task_tls():
         f'{tls}/{name}.key',
         f'{tls}/{name}.crt',
     ]
-    subject = '/C=US/ST=Oregon/L=Portland/O=Autocert Server/OU=Server/CN=0.0.0.0'
+    subject = '/C=US/ST=Oregon/L=Portland/O=Connected-Workplace Server/OU=Server/CN=0.0.0.0'
     def uptodate():
         return all([os.path.isfile(t) for t in targets])
     return {
@@ -211,8 +226,7 @@ def task_build():
         ],
     }
 
-    docker_compose_yml = yaml.safe_load(open(f'{CFG.APP_PROJPATH}/docker-compose.yml'))
-    for svc in docker_compose_yml['services'].keys():
+    for svc in DOCKER_COMPOSE_YML['services'].keys():
         yield {
             'name': svc,
             'task_dep': [],
@@ -280,69 +294,15 @@ def task_logs():
         ],
     }
 
-#def task_config():
-#    '''
-#    write config.yml -> .config.yml
-#    '''
-#    log_level = 'WARNING'
-#    filename = PROJDIR + '/LOG_LEVEL'
-#    if os.path.isfile(filename):
-#        log_level = open(filename).read().strip()
-#    log_level = get_var('LOG_LEVEL', log_level)
-#    if log_level not in LOG_LEVELS:
-#        raise UnknownLogLevelError(log_level)
-#    punch = f'''
-#    logging:
-#        loggers:
-#            api:
-#                level: {log_level}
-#        handlers:
-#            console:
-#                level: {log_level}
-#    '''
-#    return {
-#        'actions': [
-#            f'echo "cp {CONFIG_YML}\n-> {DOT_CONFIG_YML}"',
-#            f'echo "setting LOG_LEVEL={log_level}"',
-#            f'cp {CONFIG_YML} {DOT_CONFIG_YML}',
-#            lambda: _update_config(DOT_CONFIG_YML, yaml.safe_load(punch)),
-#        ]
-#    }
-
-
-#def task_example():
-#    '''
-#    cp|strip config.yml -> config.yml.example
-#    '''
-#    apikey = '82_CHAR_APIKEY'
-#    punch = f'''
-#    authorities:
-#        digicert:
-#            apikey: {apikey}
-#    destinations:
-#        zeus:
-#            apikey: {apikey}
-#    '''
-#    return {
-#        'actions': [
-#            f'cp {CONFIG_YML}.example {CONFIG_YML}.bak',
-#            f'cp {CONFIG_YML} {CONFIG_YML}.example',
-#            lambda: _update_config(CONFIG_YML+'.example', yaml.safe_load(punch)),
-#        ],
-#    }
-
 def task_rmcache():
     '''
     recursively delete python cache files
     '''
+    rmrf = 'rm -rf "{}" \;'
     return dict(
         actions=[
-            'find cli/ -depth -name __pycache__ -type d -exec rm -r "{}" \;',
-            'find cli/ -depth -name "*.pyc" -type f -exec rm -r "{}" \;',
-            'find api/ -depth -name __pycache__ -type d -exec rm -r "{}" \;',
-            'find api/ -depth -name "*.pyc" -type f -exec rm -r "{}" \;',
-            'find tests/ -depth -name __pycache__ -type d -exec rm -r "{}" \;',
-            'find tests/ -depth -name "*.pyc" -type f -exec rm -r "{}" \;',
+            f'sudo find {CFG.APP_REPOROOT} -depth -name __pycache__ -type d -exec {rmrf}',
+            f'sudo find {CFG.APP_REPOROOT} -depth -name *.pyc -type f -exec {rmrf}',
         ]
     )
 
@@ -400,23 +360,9 @@ def task_prune():
         'uptodate': ['[ -n "`docker ps -q -f status=exited`" ] && exit 1 || exit 0']
     }
 
-def task_zeus():
-    '''
-    launch zeus containers
-    '''
-    image = 'zeus17.3'
-    for num in (1, 2):
-        container = f'{image}_test{num}'
-        yield {
-            'task_dep': ['prune'],
-            'name': container,
-            'actions': [f'docker run -d -p 909{num}:9090 --name {container} {image}'],
-            'uptodate': [f'[ -n "`docker ps -q -f name={container}`" ] && exit 0 || exit 1']
-        }
-
 def task_stop():
     '''
-    stop running autocert containers
+    stop running ontainers
     '''
     def check_docker_ps():
         cmd = 'docker ps --format "{{.Names}}" | grep ' + CFG.APP_PROJNAME + ' | { grep -v grep || true; }'
