@@ -164,6 +164,7 @@ def task_test():
 
     for svc in DOCKER_COMPOSE_YML['services'].keys():
         PYTHONPATH = f'PYTHONPATH=.:{CFG.APP_PROJPATH}:{CFG.APP_PROJPATH}/{svc}:$PYTHONPATH'
+        reqfile = f'{CFG.APP_PROJPATH}/{svc}/requirements.txt'
         yield {
             'name': svc,
             'task_dep': [
@@ -171,8 +172,8 @@ def task_test():
                 'venv'
             ],
             'actions': [
-                f'venv/bin/pip3 install -r {CFG.APP_PROJPATH}/{svc}/requirements.txt',
-                f'{PYTHONPATH} venv/bin/python3 -m pytest -s -vv tests/{svc}',
+                f'[ -f {reqfile} ] && venv/bin/pip3 install -r {reqfile}',
+                f'{PYTHONPATH} venv/bin/python3 -m pytest -s -vv {CFG.APP_TESTPATH}/{svc}',
             ],
         }
 
